@@ -5,6 +5,14 @@ import { useAuthStore } from './store/authStore'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import NewTradePage from './pages/NewTradePage'
+import TradeHistoryPage from './pages/TradeHistoryPage'
+import TradeDetailPage from './pages/TradeDetailPage'
+import InsightsPage from './pages/InsightsPage'
+import PlaybookPage from './pages/PlaybookPage'
+import EditTradePage from './pages/EditTradePage'
+import SettingsPage from './pages/SettingsPage'
+
+
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuthStore()
@@ -45,10 +53,13 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/trades" element={<ProtectedRoute><div className="min-h-screen bg-[#0F172A] text-white p-8">Trade History (coming soon)</div></ProtectedRoute>} />
+        <Route path="/trades" element={<ProtectedRoute><TradeHistoryPage /></ProtectedRoute>} />
+        <Route path="/trades/:id" element={<ProtectedRoute><TradeDetailPage /></ProtectedRoute>} />
         <Route path="/trades/new" element={<ProtectedRoute><NewTradePage /></ProtectedRoute>} />
-        <Route path="/insights" element={<ProtectedRoute><div className="min-h-screen bg-[#0F172A] text-white p-8">Insights (coming soon)</div></ProtectedRoute>} />
-        <Route path="/playbook" element={<ProtectedRoute><div className="min-h-screen bg-[#0F172A] text-white p-8">Playbook (coming soon)</div></ProtectedRoute>} />
+        <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
+        <Route path="/playbook" element={<ProtectedRoute><PlaybookPage /></ProtectedRoute>} />
+        <Route path="/trades/:id/edit" element={<ProtectedRoute><EditTradePage /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

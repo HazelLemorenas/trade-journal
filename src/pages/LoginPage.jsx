@@ -12,34 +12,37 @@ export default function LoginPage() {
   const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError(null)
-    setMessage(null)
-    setLoading(true)
+const handleSubmit = async (e) => {
+  e.preventDefault()
+  setError(null)
+  setMessage(null)
+  setLoading(true)
 
-    if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
-      else navigate('/')
-    } else {
-      const { data, error } = await supabase.auth.signUp({ email, password })
-      if (error) {
-        setError(error.message)
-      } else if (data.user) {
-        // Create profile row
-        await supabase.from('profiles').insert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-        })
+  if (isLogin) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError(error.message)
+    else navigate('/')
+  } else {
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setError(error.message)
+    } else if (data.user) {
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: data.user.id,
+        email,
+        full_name: fullName,
+      })
+      if (profileError) {
+        setError('Account created but profile setup failed: ' + profileError.message)
+      } else {
         setMessage('Account created! You can now log in.')
         setIsLogin(true)
       }
     }
-
-    setLoading(false)
   }
+
+  setLoading(false)
+}
 
   return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">

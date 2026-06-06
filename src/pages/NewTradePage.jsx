@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
@@ -11,6 +10,8 @@ import Textarea from '../components/ui/Textarea'
 import CheckboxGroup from '../components/ui/CheckboxGroup'
 import Slider from '../components/ui/Slider'
 import ScreenshotUploader from '../components/ui/ScreenshotUploader'
+import { useState, useEffect } from 'react'
+import { uploadScreenshots } from '../lib/uploadScreenshots'
 
 // --- Checkbox Config ---
 const LIQUIDITY_ITEMS = [
@@ -73,10 +74,12 @@ const defaultPsych = () => ({
 })
 
 export default function NewTradePage() {
-  const { user } = useAuthStore()
+  const { user, profile } = useAuthStore()
   const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [strategies, setStrategies] = useState([])
+  
 
   // --- Form State ---
   const [trade, setTrade] = useState({
@@ -105,6 +108,7 @@ export default function NewTradePage() {
     entry_reasoning: '',
     improvement_notes: '',
     additional_notes: '',
+    strategy_id: '',
   })
 
   const [confluences, setConfluences] = useState({
@@ -114,17 +118,93 @@ export default function NewTradePage() {
     ...defaultCheckboxes(CONFLUENCE_ITEMS),
   })
 
+  useEffect(() => {
+  const fetchStrategies = async () => {
+    const { data } = await supabase
+      .from('strategies')
+      .select('id, name')
+      .eq('user_id', user.id)
+      .order('name')
+    setStrategies(data || [])
+  }
+  fetchStrategies()
+}, [])
+
   const [mistakes, setMistakes] = useState(defaultCheckboxes(MISTAKE_ITEMS))
 
   const [beforePsych, setBeforePsych] = useState(defaultPsych())
   const [afterPsych, setAfterPsych] = useState(defaultPsych())
 
   const [screenshots, setScreenshots] = useState({
-    before: null, during: null, after: null,
+    before: null,
+    during: null,
+    after: null,
+  })
+
+  const [screenshotPreviews, setScreenshotPreviews] = useState({
+    before: null,
+    during: null,
+    after: null,
   })
 
   // --- Helpers ---
-  const setField = (key, value) => setTrade((prev) => ({ ...prev, [key]: value }))
+  const setField = (key, value) => {
+  setTrade((prev) => {
+    const updated = { ...prev, [key]: value }
+
+    const entry = parseFloat(updated.entry_price)
+    const sl = parseFloat(updated.stop_loss_price)
+    const tp = parseFloat(updated.take_profit_price)
+    const exit = parseFloat(updated.exit_price)
+    const size = parseFloat(updated.position_size)
+    const balance = parseFloat(profile?.current_balance)
+    const isShort = updated.direction === 'short'
+
+    // Risk Amount
+    if (!isNaN(entry) && !isNaN(sl) && !isNaN(size)) {
+      const riskAmount = Math.abs(entry - sl) * size
+      updated.risk_amount = riskAmount.toFixed(2)
+
+      // Risk %
+      if (!isNaN(balance) && balance > 0) {
+        updated.risk_percentage = ((riskAmount / balance) * 100).toFixed(2)
+      }
+    }
+
+    // RR Planned
+    if (!isNaN(entry) && !isNaN(sl) && !isNaN(tp)) {
+      const riskPips = Math.abs(entry - sl)
+      const rewardPips = Math.abs(tp - entry)
+      if (riskPips > 0) {
+        updated.rr_planned = (rewardPips / riskPips).toFixed(2)
+      }
+    }
+
+    // RR Achieved + P&L
+    if (!isNaN(entry) && !isNaN(sl) && !isNaN(exit) && !isNaN(size)) {
+      const riskPips = Math.abs(entry - sl)
+
+      // RR Achieved
+      if (riskPips > 0) {
+        const achievedPips = Math.abs(exit - entry)
+        updated.rr_achieved = (achievedPips / riskPips).toFixed(2)
+      }
+
+      // P&L Amount
+      const pnl = isShort
+        ? (entry - exit) * size
+        : (exit - entry) * size
+      updated.pnl_amount = pnl.toFixed(2)
+
+      // P&L %
+      if (!isNaN(balance) && balance > 0) {
+        updated.pnl_percentage = ((pnl / balance) * 100).toFixed(2)
+      }
+    }
+
+    return updated
+  })
+}
 
   const calcHoldDuration = () => {
     if (!trade.entry_time || !trade.exit_time) return null
@@ -159,6 +239,7 @@ export default function NewTradePage() {
           pnl_amount: trade.pnl_amount || null,
           pnl_percentage: trade.pnl_percentage || null,
           hold_duration_minutes: holdDuration,
+          strategy_id: trade.strategy_id || null,
         })
         .select()
         .single()
@@ -195,10 +276,16 @@ export default function NewTradePage() {
         ...mistakes,
       })
 
-      navigate('/trades')
-    } catch (err) {
-      setError(err.message)
-    }
+      // Upload screenshots after trade is saved
+            const hasScreenshots = Object.values(screenshots).some(f => f !== null)
+            if (hasScreenshots) {
+              await uploadScreenshots(tradeId, user.id, screenshots)
+            }
+
+            navigate('/trades')
+          } catch (err) {
+            setError(err.message)
+          }
 
     setSaving(false)
   }
@@ -250,6 +337,17 @@ export default function NewTradePage() {
                   <option value="open">Open</option>
                 </Select>
               </FormField>
+              <FormField label="Strategy">
+                <Select
+                  value={trade.strategy_id}
+                  onChange={(e) => setField('strategy_id', e.target.value)}
+                >
+                  <option value="">No Strategy</option>
+                  {strategies.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </Select>
+              </FormField>
               <FormField label="Entry Time">
                 <Input type="datetime-local" value={trade.entry_time} onChange={(e) => setField('entry_time', e.target.value)} />
               </FormField>
@@ -267,43 +365,57 @@ export default function NewTradePage() {
           </SectionCard>
 
           {/* SECTION B: Prices */}
-          <SectionCard title="Price Levels" subtitle="Entry, exit, and risk levels">
-            <div className="grid grid-cols-3 gap-4">
-              <FormField label="Entry Price">
-                <Input type="number" step="any" placeholder="0.00" value={trade.entry_price} onChange={(e) => setField('entry_price', e.target.value)} />
-              </FormField>
-              <FormField label="Stop Loss Price">
-                <Input type="number" step="any" placeholder="0.00" value={trade.stop_loss_price} onChange={(e) => setField('stop_loss_price', e.target.value)} />
-              </FormField>
-              <FormField label="Take Profit Price">
-                <Input type="number" step="any" placeholder="0.00" value={trade.take_profit_price} onChange={(e) => setField('take_profit_price', e.target.value)} />
-              </FormField>
-              <FormField label="Exit Price">
-                <Input type="number" step="any" placeholder="0.00" value={trade.exit_price} onChange={(e) => setField('exit_price', e.target.value)} />
-              </FormField>
-              <FormField label="Risk Amount ($)">
-                <Input type="number" step="any" placeholder="0.00" value={trade.risk_amount} onChange={(e) => setField('risk_amount', e.target.value)} />
-              </FormField>
-              <FormField label="Risk (%)">
-                <Input type="number" step="any" placeholder="1.00" value={trade.risk_percentage} onChange={(e) => setField('risk_percentage', e.target.value)} />
-              </FormField>
-              <FormField label="Position Size">
-                <Input type="number" step="any" placeholder="0.00" value={trade.position_size} onChange={(e) => setField('position_size', e.target.value)} />
-              </FormField>
-              <FormField label="RR Planned">
-                <Input type="number" step="any" placeholder="2.00" value={trade.rr_planned} onChange={(e) => setField('rr_planned', e.target.value)} />
-              </FormField>
-              <FormField label="RR Achieved">
-                <Input type="number" step="any" placeholder="0.00" value={trade.rr_achieved} onChange={(e) => setField('rr_achieved', e.target.value)} />
-              </FormField>
-              <FormField label="P&L Amount ($)">
-                <Input type="number" step="any" placeholder="0.00" value={trade.pnl_amount} onChange={(e) => setField('pnl_amount', e.target.value)} />
-              </FormField>
-              <FormField label="P&L (%)">
-                <Input type="number" step="any" placeholder="0.00" value={trade.pnl_percentage} onChange={(e) => setField('pnl_percentage', e.target.value)} />
-              </FormField>
-            </div>
-          </SectionCard>
+            <SectionCard title="Price Levels" subtitle="Enter your prices and size — everything else is calculated automatically">
+              {/* Inputs */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <FormField label="Entry Price" required>
+                  <Input type="number" step="any" placeholder="0.00" value={trade.entry_price} onChange={(e) => setField('entry_price', e.target.value)} />
+                </FormField>
+                <FormField label="Stop Loss Price" required>
+                  <Input type="number" step="any" placeholder="0.00" value={trade.stop_loss_price} onChange={(e) => setField('stop_loss_price', e.target.value)} />
+                </FormField>
+                <FormField label="Take Profit Price">
+                  <Input type="number" step="any" placeholder="0.00" value={trade.take_profit_price} onChange={(e) => setField('take_profit_price', e.target.value)} />
+                </FormField>
+                <FormField label="Exit Price">
+                  <Input type="number" step="any" placeholder="0.00" value={trade.exit_price} onChange={(e) => setField('exit_price', e.target.value)} />
+                </FormField>
+                <FormField label="Position Size" required>
+                  <Input type="number" step="any" placeholder="0.00" value={trade.position_size} onChange={(e) => setField('position_size', e.target.value)} />
+                </FormField>
+              </div>
+
+              {/* Calculated Fields */}
+              <div className="border-t border-slate-700 pt-5">
+                <p className="text-xs text-slate-500 uppercase tracking-wider mb-4">Auto-Calculated</p>
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { label: 'Risk Amount ($)', value: trade.risk_amount },
+                    { label: 'Risk (%)', value: trade.risk_percentage },
+                    { label: 'RR Planned', value: trade.rr_planned },
+                    { label: 'RR Achieved', value: trade.rr_achieved },
+                    { label: 'P&L Amount ($)', value: trade.pnl_amount },
+                    { label: 'P&L (%)', value: trade.pnl_percentage },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-[#0F172A] rounded-lg px-4 py-3 border border-slate-700">
+                      <p className="text-slate-500 text-xs mb-1">{label}</p>
+                      <p className={`text-sm font-semibold ${
+                        value && parseFloat(value) < 0 ? 'text-[#EF4444]'
+                        : value && parseFloat(value) > 0 ? 'text-[#22C55E]'
+                        : 'text-slate-500'
+                      }`}>
+                        {value || '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {!profile?.current_balance && (
+                  <p className="text-slate-600 text-xs mt-3">
+                    * Risk % and P&L % require an account balance. Set it in your profile settings.
+                  </p>
+                )}
+              </div>
+            </SectionCard>
 
           {/* SECTION C: Bias */}
           <SectionCard title="Daily Bias" subtitle="Your market direction read for the day">
@@ -365,9 +477,13 @@ export default function NewTradePage() {
                 <ScreenshotUploader
                   key={stage}
                   stage={stage}
-                  tradeId={null}
-                  onUpload={({ stage, file, preview }) => {
-                    setScreenshots((prev) => ({ ...prev, [stage]: { file, preview } }))
+                  previewUrl={screenshotPreviews[stage]}
+                  onFileSelect={(stage, file) => {
+                    setScreenshots((prev) => ({ ...prev, [stage]: file }))
+                    setScreenshotPreviews((prev) => ({
+                      ...prev,
+                      [stage]: file ? URL.createObjectURL(file) : null,
+                    }))
                   }}
                 />
               ))}

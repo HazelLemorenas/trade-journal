@@ -7,15 +7,17 @@ import {
   Lightbulb,
   Library,
   LogOut,
-  TrendingUp
+  TrendingUp,
+  Settings
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/trades/new', icon: PlusCircle, label: 'New Trade' },
-  { to: '/trades', icon: BookOpen, label: 'Trade History' },
+  { to: '/trades', icon: BookOpen, label: 'Trade History', end: true },
   { to: '/insights', icon: Lightbulb, label: 'Insights' },
   { to: '/playbook', icon: Library, label: 'Playbook' },
+  { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function Sidebar() {
@@ -43,11 +45,11 @@ export default function Sidebar() {
 
       {/* Nav Links */}
       <nav className="flex-1 px-4 py-6 space-y-1">
-        {navItems.map(({ to, icon: Icon, label }) => (
-          <NavLink
+        {navItems.map(({ to, icon: Icon, label, end }) => (
+         <NavLink
             key={to}
             to={to}
-            end={to === '/'}
+            end={end || to === '/'}
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                 isActive
