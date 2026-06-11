@@ -41,6 +41,9 @@ export default function SettingsPage() {
     confirm_password: '',
   })
 
+  const [justSaved, setJustSaved] = useState(false)
+  const [overrideBalance, setOverrideBalance] = useState(false)
+
   const [profileSaving, setProfileSaving] = useState(false)
   const [balanceSaving, setBalanceSaving] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
@@ -54,7 +57,7 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState(null)
 
   useEffect(() => {
-    if (profile) {
+    if (profile && !justSaved) {
       setProfileForm({
         full_name: profile.full_name || '',
         username: profile.username || '',
@@ -99,34 +102,47 @@ export default function SettingsPage() {
     setBalanceSaving(true)
 
     const starting = parseFloat(balanceForm.starting_balance)
-    const current = parseFloat(balanceForm.current_balance)
 
-    if (isNaN(starting) || isNaN(current)) {
-      setBalanceError('Please enter valid numbers for both balance fields.')
+    if (isNaN(starting)) {
+      setBalanceError('Please enter a valid starting balance.')
       setBalanceSaving(false)
       return
     }
 
-    if (starting <= 0 || current <= 0) {
-      setBalanceError('Balances must be greater than zero.')
+    if (starting <= 0) {
+      setBalanceError('Starting balance must be greater than zero.')
       setBalanceSaving(false)
       return
+    }
+
+    const updateData = {
+      starting_balance: starting,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (overrideBalance) {
+      const current = parseFloat(balanceForm.current_balance)
+      if (!isNaN(current) && current > 0) {
+        updateData.current_balance = current
+      }
     }
 
     const { error } = await supabase
       .from('profiles')
-      .update({
-        starting_balance: starting,
-        current_balance: current,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', user.id)
 
-    if (error) setBalanceError(error.message)
-    else {
-      setBalanceMsg('Account balance updated successfully.')
-      fetchProfile(user.id)
-    }
+    if (error) {
+          setBalanceError(error.message)
+        } else {
+          setJustSaved(true)
+          setBalanceMsg('Account balance updated successfully.')
+          setOverrideBalance(false)
+          setTimeout(() => {
+            fetchProfile(user.id)
+            setJustSaved(false)
+          }, 800)
+        }
 
     setBalanceSaving(false)
   }
@@ -273,14 +289,45 @@ export default function SettingsPage() {
                     onChange={(e) => setBalanceForm(p => ({ ...p, starting_balance: e.target.value }))}
                   />
                 </FormField>
+
                 <FormField label="Current Balance">
-                  <Input
-                    type="number"
-                    step="any"
-                    placeholder="1000.00"
-                    value={balanceForm.current_balance}
-                    onChange={(e) => setBalanceForm(p => ({ ...p, current_balance: e.target.value }))}
-                  />
+                  {overrideBalance ? (
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        step="any"
+                        placeholder="1000.00"
+                        value={balanceForm.current_balance}
+                        onChange={(e) => setBalanceForm(p => ({ ...p, current_balance: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setOverrideBalance(false)}
+                        className="px-3 py-2 rounded-lg border border-slate-700 text-slate-400 hover:text-white text-xs whitespace-nowrap transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-[#0F172A] rounded-lg px-4 py-2.5 border border-slate-700 flex items-center justify-between">
+                      <span className={`text-sm font-semibold ${
+                        parseFloat(balanceForm.current_balance) >= parseFloat(balanceForm.starting_balance)
+                          ? 'text-[#22C55E]'
+                          : 'text-[#EF4444]'
+                      }`}>
+                        {balanceForm.current_balance
+                          ? `${profileForm.currency} ${Number(balanceForm.current_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                          : '—'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setOverrideBalance(true)}
+                        className="text-slate-500 hover:text-white text-xs transition"
+                      >
+                        Override
+                      </button>
+                    </div>
+                  )}
                 </FormField>
               </div>
 

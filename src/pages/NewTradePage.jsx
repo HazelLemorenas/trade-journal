@@ -212,6 +212,33 @@ export default function NewTradePage() {
     return Math.round(diff / 60000)
   }
 
+  const recalculateBalance = async () => {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('starting_balance')
+      .eq('id', user.id)
+      .single()
+
+    if (!profileData?.starting_balance) return
+
+    const { data: trades } = await supabase
+      .from('trades')
+      .select('pnl_amount')
+      .eq('user_id', user.id)
+      .eq('status', 'closed')
+
+    const totalPnl = (trades || [])
+      .filter(t => t.pnl_amount != null)
+      .reduce((sum, t) => sum + Number(t.pnl_amount), 0)
+
+    const newBalance = Number(profileData.starting_balance) + totalPnl
+
+    await supabase
+      .from('profiles')
+      .update({ current_balance: newBalance.toFixed(2) })
+      .eq('id', user.id)
+  }
+
   // --- Submit ---
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -276,13 +303,17 @@ export default function NewTradePage() {
         ...mistakes,
       })
 
-      // Upload screenshots after trade is saved
-            const hasScreenshots = Object.values(screenshots).some(f => f !== null)
-            if (hasScreenshots) {
-              await uploadScreenshots(tradeId, user.id, screenshots)
-            }
+            // Upload screenshots after trade is saved
+              const hasScreenshots = Object.values(screenshots).some(f => f !== null)
+              if (hasScreenshots) {
+                await uploadScreenshots(tradeId, user.id, screenshots)
+              }
 
-            navigate('/trades')
+              // Auto-update current balance
+              await recalculateBalance()
+
+              navigate('/trades')
+
           } catch (err) {
             setError(err.message)
           }

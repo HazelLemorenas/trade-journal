@@ -70,6 +70,33 @@ const formatDateTimeLocal = (val) => {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+const recalculateBalance = async () => {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('starting_balance')
+      .eq('id', user.id)
+      .single()
+
+    if (!profileData?.starting_balance) return
+
+    const { data: trades } = await supabase
+      .from('trades')
+      .select('pnl_amount')
+      .eq('user_id', user.id)
+      .eq('status', 'closed')
+
+    const totalPnl = (trades || [])
+      .filter(t => t.pnl_amount != null)
+      .reduce((sum, t) => sum + Number(t.pnl_amount), 0)
+
+    const newBalance = Number(profileData.starting_balance) + totalPnl
+
+    await supabase
+      .from('profiles')
+      .update({ current_balance: newBalance.toFixed(2) })
+      .eq('id', user.id)
+  }
+
 export default function EditTradePage() {
   const { id } = useParams()
   const { user, profile } = useAuthStore()
@@ -274,6 +301,9 @@ export default function EditTradePage() {
         await uploadScreenshots(id, user.id, newScreenshots)
       }
 
+      // Auto-update current balance
+      await recalculateBalance()
+      
       navigate(`/trades/${id}`)
     } catch (err) {
       setError(err.message)
