@@ -41,19 +41,15 @@ export default function LoginPage() {
     setLoading(false)
   }
 
-}
-
   return (
     <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
       <div className="w-full max-w-md">
 
-        {/* Logo / Title */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white">Trade Journal</h1>
           <p className="text-slate-400 mt-2">Track. Analyze. Improve.</p>
         </div>
 
-        {/* Card */}
         <div className="bg-[#1E293B] rounded-2xl p-8 shadow-xl">
           <h2 className="text-xl font-semibold text-white mb-6">
             {isLogin ? 'Welcome back' : 'Create your account'}
@@ -131,3 +127,4 @@ export default function LoginPage() {
       </div>
     </div>
   )
+}
